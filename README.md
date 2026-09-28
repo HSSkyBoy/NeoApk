@@ -14,7 +14,7 @@ Designed as a modern, clean-room replacement for fragile legacy libraries like `
 
 ### 1. Resilient Pure Kotlin ZIP Engine (`top.nkbe.nza.zip`)
 - **Zero Android Framework Dependency**: 100% Kotlin JVM implementation. Runs seamlessly across desktop CLI, server pipelines, and Android apps.
-- **MT Manager-Grade Fault Tolerance**: Tolerant of malformed, truncated, or non-standard Central Directory and Local File Headers commonly found in protected or modded APKs.
+- **MT Manager Belike**: Tolerant of malformed, truncated, or non-standard Central Directory and Local File Headers commonly found in protected or modded APKs.
 - **High-Throughput Streaming**: Custom `BufferedRandomAccess` (default 128KB circular buffer) and `BridgeInputStream`/`BridgeOutputStream` for high I/O throughput with minimal memory footprint.
 - **Native Host Nesting & Zero-Copy Virtual Entries**:
   - `putNextHostEntry`: Writes nested APKs (e.g. `origin.apk`) with exact uncompressed (STORED) page alignment.
@@ -78,7 +78,7 @@ In `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.HSSkyBoy:NeoApk:v1.0.0")
+    implementation("top.nkbe:NeoApk:1.0.0")
 }
 ```
 
