@@ -4,7 +4,7 @@ plugins {
     `maven-publish`
 }
 
-group = "top.nkbe"
+group = "com.github.HSSkyBoy"
 version = "1.0.0"
 
 repositories {
@@ -34,8 +34,8 @@ publishing {
     publications {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
-            groupId = "top.nkbe"
-            artifactId = "neoapk"
+            groupId = "com.github.HSSkyBoy"
+            artifactId = "NeoApk"
             version = project.version.toString()
         }
     }
