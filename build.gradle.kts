@@ -23,10 +23,9 @@ kotlin {
 }
 
 dependencies {
-    api("org.bouncycastle:bcprov-jdk18on:1.78.1")
-
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.android.tools.build:apksig:8.0.2")
+    testImplementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     testImplementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
 }
 
