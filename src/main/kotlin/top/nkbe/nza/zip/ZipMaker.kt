@@ -12,9 +12,6 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.charset.Charset
-import java.util.Arrays
-import java.util.Collections
-import java.util.Objects
 import java.util.zip.Deflater
 
 class ZipMaker : Closeable {
@@ -28,6 +25,8 @@ class ZipMaker : Closeable {
 
         const val METHOD_DEFLATED = ZipConstant.METHOD_DEFLATED
         const val METHOD_STORED = ZipConstant.METHOD_STORED
+
+        private const val COPY_BUFFER_SIZE = 32 * 1024
 
         @JvmStatic
         fun defaultAlignment(name: String, isHost: Boolean): Int {
@@ -63,7 +62,7 @@ class ZipMaker : Closeable {
     private var topOutput: CrcOutputStream? = null
     private var bottomOutput: BridgeOutputStream? = null
 
-    private val copyEntryBuffer = ByteArray(8 * 1024)
+    private val copyEntryBuffer = ByteArray(COPY_BUFFER_SIZE)
 
     @Throws(IOException::class)
     constructor(path: String) : this(File(path))
@@ -230,15 +229,7 @@ class ZipMaker : Closeable {
         }
         archive.writeUShort(header.name.size)
 
-        var extra: ByteArray
-        if (header.sizeNeedZip64) {
-            val data = ByteArray(2 * 8)
-            ZipUtil.writeLong(data, 0, header.size)
-            ZipUtil.writeLong(data, 8, header.compressedSize)
-            extra = ExtraDataRecord.set(header.extra, ZipConstant.ZIP64_EXTENDED_INFO_HEADER_ID.toInt(), data)
-        } else {
-            extra = ExtraDataRecord.remove(header.extra, ZipConstant.ZIP64_EXTENDED_INFO_HEADER_ID.toInt())
-        }
+        var extra = withZip64Extra(header.extra, header.sizeNeedZip64, header.size, header.compressedSize)
 
         // ZipAlign
         if (header.method == METHOD_STORED) {
@@ -251,6 +242,14 @@ class ZipMaker : Closeable {
         archive.writeUShort(extra.size)
         archive.write(header.name)
         archive.write(extra)
+    }
+
+    private fun withZip64Extra(extra: ByteArray, needZip64: Boolean, vararg values: Long): ByteArray {
+        val id = ZipConstant.ZIP64_EXTENDED_INFO_HEADER_ID.toInt()
+        if (!needZip64) return ExtraDataRecord.remove(extra, id)
+        val data = ByteArray(values.size * 8)
+        values.forEachIndexed { i, v -> ZipUtil.writeLong(data, i * 8, v) }
+        return ExtraDataRecord.set(extra, id, data)
     }
 
     private fun setupNeedZip64(header: CenterFileHeader) {
@@ -297,7 +296,7 @@ class ZipMaker : Closeable {
 
     @Throws(IOException::class)
     fun writeFully(`is`: InputStream) {
-        val b = ByteArray(copyEntryBuffer.size)
+        val b = copyEntryBuffer
         var len: Int
         while (`is`.read(b).also { len = it } > 0) {
             write(b, 0, len)
@@ -317,7 +316,7 @@ class ZipMaker : Closeable {
         cur.size = top.count
 
         val saved = archive.filePointer
-        archive.seek(cur.headerOffset + ZipConstant.WORD + ZipConstant.SHORT + ZipConstant.SHORT + ZipConstant.SHORT + ZipConstant.WORD)
+        archive.seek(cur.headerOffset + ZipConstant.LFH_OFFSET_FOR_CRC)
         archive.writeInt(cur.crc)
 
         if (cur.sizeNeedZip64) {
@@ -338,7 +337,7 @@ class ZipMaker : Closeable {
                 cur.size >= ZipConstant.MAX_ZIP_ENTRY_AND_ARCHIVE_SIZE
             ) {
                 throw IOException(
-                    "Zip entry size needs zip64: name=${String(cur.name)}, compressedSize=${cur.compressedSize}, size=${cur.size}"
+                    "Zip entry size needs zip64: name=${String(cur.name, ZipConstant.UTF_8)}, compressedSize=${cur.compressedSize}, size=${cur.size}"
                 )
             }
             archive.writeUInt(cur.compressedSize)
@@ -359,7 +358,7 @@ class ZipMaker : Closeable {
             closeEntry()
         }
         val cdOffset = archive.filePointer
-        Collections.sort(headers)
+        headers.sort()
 
         for (header in headers) {
             writeCentralFileHeader(header)
@@ -378,7 +377,7 @@ class ZipMaker : Closeable {
         }
         val trimmed = ExtraDataRecord.trim(extra)
         val padding = getAlignedPadding(extraDataOffset + trimmed.size, alignment)
-        return Arrays.copyOf(trimmed, trimmed.size + padding)
+        return trimmed.copyOf(trimmed.size + padding)
     }
 
     private fun isAligned(pos: Long, alignTo: Int): Boolean = (pos % alignTo) == 0L
@@ -389,16 +388,7 @@ class ZipMaker : Closeable {
     @Throws(IOException::class)
     private fun writeCentralFileHeader(header: CenterFileHeader) {
         val needZip64 = header.needZip64()
-        var extra: ByteArray
-        if (needZip64) {
-            val data = ByteArray(3 * 8)
-            ZipUtil.writeLong(data, 0, header.size)
-            ZipUtil.writeLong(data, 8, header.compressedSize)
-            ZipUtil.writeLong(data, 16, header.headerOffset)
-            extra = ExtraDataRecord.set(header.extra, ZipConstant.ZIP64_EXTENDED_INFO_HEADER_ID.toInt(), data)
-        } else {
-            extra = ExtraDataRecord.remove(header.extra, ZipConstant.ZIP64_EXTENDED_INFO_HEADER_ID.toInt())
-        }
+        val extra = withZip64Extra(header.extra, needZip64, header.size, header.compressedSize, header.headerOffset)
 
         archive.writeInt(ZipConstant.CFH_SIG)
         archive.writeUShort(maxOf(20, header.version()))

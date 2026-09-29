@@ -99,6 +99,10 @@ class FileDataSource(
 
     private var currentPos: Long = 0
 
+    private companion object {
+        const val COPY_BUFFER_SIZE = 64 * 1024
+    }
+
     override fun size(): Long = dataSize
     override fun pos(): Long = currentPos
 
@@ -110,7 +114,7 @@ class FileDataSource(
     override fun copyTo(os: OutputStream, length: Long) {
         if (length > remaining()) throw EOFException()
         var remainingBytes = length
-        val buf = ByteArray(4096)
+        val buf = ByteArray(min(length, COPY_BUFFER_SIZE.toLong()).toInt())
         randomAccessFile.seek(start + currentPos)
         while (remainingBytes > 0) {
             val toRead = min(remainingBytes, buf.size.toLong()).toInt()

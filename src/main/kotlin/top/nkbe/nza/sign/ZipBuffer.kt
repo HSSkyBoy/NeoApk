@@ -1,16 +1,13 @@
-﻿package top.nkbe.nza.sign
+package top.nkbe.nza.sign
 
 import top.nkbe.nza.data.buffer.BufferedRandomAccess
-import java.io.EOFException
+import top.nkbe.nza.zip.EocdLocator
 import java.io.IOException
 
 class ZipBuffer(val file: BufferedRandomAccess) {
     companion object {
         const val APK_SIG_BLOCK_MAGIC_HI: Long = 0x3234206b636f6c42L
         const val APK_SIG_BLOCK_MAGIC_LO: Long = 0x20676953204b5041L
-        const val EOCD_SIG: Int = 0x06054B50
-        const val MIN_EOCD_SIZE: Int = 22
-        const val MAX_EOCD_SIZE: Int = MIN_EOCD_SIZE + 0xFFFF
         const val APK_SIG_BLOCK_MIN_SIZE: Int = 32
     }
 
@@ -21,21 +18,8 @@ class ZipBuffer(val file: BufferedRandomAccess) {
     val hasApkSigBlock: Boolean
 
     init {
-        var found = false
-        val length = file.length()
-        var off = length - MIN_EOCD_SIZE
-        val stopSearching = maxOf(0L, length - MAX_EOCD_SIZE)
-        while (off >= stopSearching) {
-            file.seek(off)
-            if (file.readInt() == EOCD_SIG) {
-                found = true
-                break
-            }
-            off--
-        }
-        if (!found) {
-            throw IOException("Archive is not a ZIP archive")
-        }
+        val off = EocdLocator.find(file)
+        if (off < 0) throw IOException("Archive is not a ZIP archive")
 
         eocdOffset = off
         file.seek(off + 12)
@@ -58,7 +42,7 @@ class ZipBuffer(val file: BufferedRandomAccess) {
                     }
                 }
             }
-        } catch (_: Exception) {
+        } catch (_: IOException) {
         }
         entriesDataSizeBytes = entriesDataEnd
         hasApkSigBlock = matchV2SigBlock
@@ -67,4 +51,3 @@ class ZipBuffer(val file: BufferedRandomAccess) {
     @Throws(IOException::class)
     fun length(): Long = file.length()
 }
-

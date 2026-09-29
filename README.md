@@ -4,37 +4,47 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/HSSkyBoy/NeoApk?color=brightgreen)](https://github.com/HSSkyBoy/NeoApk/releases)
 
-**NeoApk (`top.nkbe.nza`)** is a high-performance, fault-tolerant pure Kotlin ZIP engine, ABI-aware 16KB page-alignment utility, and APK Signature Scheme v2 & v3 signer tailored for modern Android packaging and modding pipelines.
+**NeoApk** (package `top.nkbe.nza`) is a pure Kotlin/JVM library for building, aligning, and signing Android APKs. It bundles three things that APK repackaging tools usually get from separate places:
 
-Designed as a modern, clean-room replacement for fragile legacy libraries like `apkzlib` and external C binaries (`zipalign`, `apksigner`), NeoApk runs anywhere on the JVM, CLI, or Android runtime without external native dependencies.
+- a fault-tolerant **ZIP reader/writer** (replaces `apkzlib`),
+- **ABI-aware page alignment** including 16KB (replaces `zipalign`),
+- an **APK Signature Scheme v2/v3 signer** and **signature reader** (replaces `apksigner`).
+
+It has no runtime dependencies, needs no native binaries, and runs on desktop JVMs and on Android alike. It is the packaging engine behind [NPatch](https://github.com/7723mod/NPatch), which is the best reference for real-world usage (see [Real-world usage](#real-world-usage-npatch)).
 
 ---
 
 ## Features
 
-### 1. Resilient Pure Kotlin ZIP Engine (`top.nkbe.nza.zip`)
-- **Zero Android Framework Dependency**: 100% Kotlin JVM implementation. Runs seamlessly across desktop CLI, server pipelines, and Android apps.
-- **MT Manager Belike**: Tolerant of malformed, truncated, or non-standard Central Directory and Local File Headers commonly found in protected or modded APKs.
-- **High-Throughput Streaming**: Custom `BufferedRandomAccess` (default 128KB circular buffer) and `BridgeInputStream`/`BridgeOutputStream` for high I/O throughput with minimal memory footprint.
-- **Native Host Nesting & Zero-Copy Virtual Entries**:
-  - `putNextHostEntry`: Writes nested APKs (e.g. `origin.apk`) with exact uncompressed (STORED) page alignment.
-  - `putNextVirtualEntry`: Maps files inside the host APK directly into the outer APK's Central Directory without unpacking, saving substantial disk space and build time.
-- **Complete ZIP64 Support**: Seamlessly handles APK archives exceeding 4GB and 65,535 entries.
+### ZIP engine (`top.nkbe.nza.zip`)
+- **Tolerant reader**: `ZipFile` parses archives with malformed, truncated, or non-standard headers commonly found in protected or modded APKs.
+- **Streaming writer**: `ZipMaker` writes entries sequentially over a buffered random-access file (128KB buffer by default).
+- **Raw entry copy**: `ZipMaker.copyZipEntry` copies an entry's compressed bytes as-is, with no inflate/deflate round-trip.
+- **Host entries and virtual entries**:
+  - `putNextHostEntry` embeds a whole APK (for example `assets/npatch/origin.apk`) as a STORED, page-aligned entry.
+  - `putNextVirtualEntry` exposes files of that embedded APK in the outer Central Directory without copying them, so the outer APK can be smaller and faster to build.
+- **ZIP64**: archives over 4GB or with more than 65,535 entries are supported.
 
-### 2. ABI-Aware 16KB Page Alignment
-Automatically inspects entry names and architectures to enforce strict Google Play and Android 15+ kernel memory-mapping compliance:
-- **16384 Bytes (16KB) Alignment**:
-  - 64-bit native libraries: `lib/arm64-v8a/*.so`, `lib/x86_64/*.so`
-  - Nested APKs and binary images: `assets/**/origin.apk`, `origin_apk.bin`, etc.
-  - Virtual entries mapped via `putNextVirtualEntry` maintain 16KB alignment automatically when the host APK is aligned.
-- **4096 Bytes (4KB) Alignment**: 32-bit native libraries (`armeabi-v7a`, `x86`).
-- **4 Bytes Alignment**: `resources.arsc` and all other uncompressed (STORED) entries.
+### Page alignment
+`ZipMaker` aligns STORED entries automatically using `ZipMaker.defaultAlignment`:
 
-### 3. APK Signature Scheme V2 & V3 Signer (`top.nkbe.nza.sign`)
-- **Dual Scheme (v2 + v3) Signing**: Produces standard APK Signing Blocks fully compatible with Android 7.0 through Android 16+.
-- **APK Verity Tree Builder**: Built-in Merkle tree calculation with an integer overflow workaround for APKs exceeding 2GB on Android 15.
-- **Preserves Existing Signatures & Metadata**: Injects the signing block immediately before the Central Directory without altering or stripping existing `META-INF/` entries (essential for signature bypass and integrity checks).
-- **Keystore Flexibility**: Supports BKS, JKS, PKCS12 keystores and in-memory key pairs.
+| Entry | Alignment |
+|-------|-----------|
+| Host entries, `*origin.apk`, `*origin_apk.bin`, `assets/{npatch,lspatch}/origin.apk`, `assets/origin.apk` | 16384 (16KB) |
+| `lib/arm64-v8a/*.so`, `lib/x86_64/*.so` | 16384 (16KB) |
+| Other `.so` files (`armeabi-v7a`, `x86`, ...) | 4096 (4KB) |
+| `resources.arsc` and every other STORED entry | 4 |
+
+Virtual entries inherit their alignment from the host, so they stay 16KB-aligned when the host entry is. To use a different policy, assign `ZipMaker.alignmentRule`.
+
+### Signing (`top.nkbe.nza.sign`)
+- **`V2V3SchemeSigner`** signs an APK in place with APK Signature Scheme v2 and/or v3. The v3 block declares SDK range 28 to `Int.MAX_VALUE`.
+- **APK Verity**: a Merkle-tree padding/digest is added when the APK is at most 2GB. Above 2GB the verity algorithms are dropped to avoid an integer overflow in Android 15's verity builder.
+- **Signing block replacement**: any existing APK Signing Block is replaced by the new one, which is inserted right before the Central Directory. `META-INF/` entries are never touched, so a v1 signature already in the APK stays as it is.
+- **`ApkSignatureReader`** extracts the signer certificates of an APK from the v3/v3.1, v2, or v1 signature (in that order of preference), with no dependencies. It returns the same hex form as Android's `Signature.toCharsString()`, which is what signature-bypass hooks compare against.
+- **Keys**: `SignatureKey` / `GenericSignatureKey` wrap any `PrivateKey` plus certificate chain, so keys can come from BKS, JKS, PKCS12, or memory.
+  Reading a BKS keystore needs a BouncyCastle provider on the JVM. Android ships one.
+  RSA (PSS and PKCS#1 v1.5), ECDSA, and DSA keys are supported.
 
 ---
 
@@ -42,51 +52,54 @@ Automatically inspects entry names and architectures to enforce strict Google Pl
 
 ```
 top.nkbe.nza
-├── data
-│   ├── buffer    # High-throughput buffered random access (BufferedRandomAccess)
-│   ├── source    # File, memory, and fragmented random access abstractions
-│   └── stream    # CRC calculation, raw Deflate/Inflate, and zero-copy bridges
 ├── zip
-│   ├── ZipFile   # Resilient, fault-tolerant ZIP archive reader
-│   ├── ZipMaker  # ABI-aware, alignment-enforcing ZIP archive creator
-│   └── ...       # ExtraDataRecord, CenterFileHeader, ZipEntry
-└── sign
-    ├── V2V3SchemeSigner # Core APK v2 & v3 scheme signer
-    ├── VerityTreeBuilder# APK Verity tree generator with >2GB safety
-    └── SignatureKey     # Key abstraction and certificates wrapper
+│   ├── ZipFile              # Fault-tolerant reader (entries, streams, nested ZIPs)
+│   ├── ZipMaker             # Writer: alignment, host/virtual entries, raw copy
+│   ├── ZipEntry             # Entry metadata as read from an archive
+│   └── ZipConstant, ZipUtil, CenterFileHeader, ExtraDataRecord
+├── sign
+│   ├── V2V3SchemeSigner     # v2 + v3 signer (in place)
+│   ├── ApkSignatureReader   # Certificate extraction: v3/v3.1, v2, v1
+│   ├── SignatureKey         # SignatureKey interface + GenericSignatureKey
+│   ├── SignatureAlgorithm   # Algorithm registry and digest computation
+│   ├── VerityTreeBuilder    # APK Verity Merkle tree
+│   └── ZipBuffer, data/*    # Layout parsing and chunked data sources used for digests
+└── data
+    ├── buffer               # BufferedRandomAccess, RandomAccessFactory
+    ├── source               # File / memory / fragment RandomAccessData
+    └── stream               # Bridge streams, CRC, raw Deflate/Inflate
 ```
+
+---
+
+## Requirements
+
+- JDK 21 (the library is compiled with a Java 21 toolchain).
+- Kotlin 2.1.x if you build it from source. Consumers can be plain Java, since the public API is `@JvmStatic`/`@Throws`-annotated.
 
 ---
 
 ## Installation
 
-### 1. Gradle (JitPack)
+The library coordinates are `top.nkbe:NeoApk:1.0.0`.
 
-In `settings.gradle.kts`:
+### Local Maven
 
-```kotlin
-dependencyResolutionManagement {
-    repositories {
-        google()
-        mavenCentral()
-        maven { url = uri("https://jitpack.io") }
-    }
-}
+```
+./gradlew publishToMavenLocal
 ```
 
-In `build.gradle.kts`:
-
 ```kotlin
-dependencies {
-    implementation("top.nkbe:NeoApk:1.0.0")
-}
+repositories { mavenLocal() }
+dependencies { implementation("top.nkbe:NeoApk:1.0.0") }
 ```
 
-### 2. Gradle Composite Build (Local Development)
+### Composite build (local development)
 
-In `settings.gradle.kts`:
+Clone NeoApk next to your project and substitute it. This is how NPatch consumes it:
 
 ```kotlin
+// settings.gradle.kts
 val neoApkDir = file("../NeoApk")
 if (neoApkDir.exists()) {
     includeBuild(neoApkDir) {
@@ -97,88 +110,185 @@ if (neoApkDir.exists()) {
 }
 ```
 
-In `build.gradle.kts`:
-
 ```kotlin
+// build.gradle.kts
 dependencies {
     implementation("top.nkbe:NeoApk:1.0.0")
 }
 ```
 
+If the sibling directory does not exist, the substitution is skipped and `top.nkbe:NeoApk:1.0.0` has to resolve from a repository (for example `mavenLocal()`).
+
 ---
 
-## Quick Start
+## Usage
 
-### 1. Create and Align an APK
+### 1. Read an APK
+
+`ZipFile` opens the archive lazily and indexes entries by name.
+
+```kotlin
+import top.nkbe.nza.zip.ZipFile
+import java.io.File
+
+ZipFile(File("app.apk")).use { zip ->
+    val manifest = zip.getEntry("AndroidManifest.xml") ?: error("not an apk")
+    zip.getInputStream(manifest).use { input -> /* decompressed bytes */ }
+
+    for (entry in zip.getEntries()) {
+        println("${entry.name} method=${entry.method} size=${entry.size}")
+    }
+}
+```
+
+- `getInputStream(entry)` returns decompressed data. `getRawInputStream(entry)` returns the stored/compressed bytes untouched.
+- `getEntry(name)` returns `null` for a missing entry. `getEntryNonNull(name)` throws `IOException`.
+- `openEntryAsZipFile(entry)` opens a STORED entry (a nested APK, for instance) as a `ZipFile` without extracting it.
+
+### 2. Create an aligned APK
 
 ```kotlin
 import top.nkbe.nza.zip.ZipMaker
 import java.io.File
 
-val apkFile = File("patched_app.apk")
-
-ZipMaker(apkFile).use { maker ->
-    // Deflated entry
-    maker.method = ZipMaker.METHOD_DEFLATED
+ZipMaker(File("out.apk")).use { maker ->
+    // DEFLATED is the default method
     maker.putNextEntry("AndroidManifest.xml")
     maker.write(manifestBytes)
     maker.closeEntry()
 
-    // Stored 64-bit native library (automatically 16KB aligned)
+    // STORED 64-bit library: aligned to 16KB automatically
     maker.method = ZipMaker.METHOD_STORED
     maker.putNextEntry("lib/arm64-v8a/libnative.so")
-    maker.write(soBytes)
+    maker.write(soBytes)      // or maker.writeFully(inputStream)
     maker.closeEntry()
+    maker.method = ZipMaker.METHOD_DEFLATED
 }
 ```
 
-### 2. Host APK Nesting & Zero-Copy Virtual Entry Mapping
+`ZipMaker(file)` deletes an existing file at that path. Settings available on the maker: `method`, `level` (`LEVEL_FASTEST` to `LEVEL_BEST`), `encoding`, `comment`, `isForceZip64`, and `alignmentRule`.
+
+### 3. Repack: copy, convert, and skip entries
+
+`copyZipEntry` reuses the compressed bytes. When an entry needs a different storage method, for example to re-store `.so` files and `resources.arsc` so they can be aligned, rewrite it:
 
 ```kotlin
-import top.nkbe.nza.zip.ZipFile
-import top.nkbe.nza.zip.ZipMaker
-
-ZipFile(originalApk).use { srcZip ->
-    ZipMaker(outputApk).use { maker ->
-        maker.putNextEntry("AndroidManifest.xml")
-        maker.write(newManifestBytes)
-        maker.closeEntry()
-
-        // Embed original APK as a 16KB-aligned host entry
-        val hostHolder = maker.putNextHostEntry("assets/npatch/origin.apk", srcZip)
-
-        // Expose entries from origin.apk directly in the outer Central Directory
-        hostHolder.putNextVirtualEntry("lib/arm64-v8a/libnative.so")
-        hostHolder.putNextVirtualEntry("resources.arsc")
+ZipFile(srcApk).use { src ->
+    ZipMaker(outApk).use { maker ->
+        for (entry in src.getEntries()) {
+            val name = entry.name
+            val mustBeStored = name.endsWith(".so") || name == "resources.arsc"
+            if (mustBeStored && entry.method != ZipConstant.METHOD_STORED) {
+                maker.method = ZipMaker.METHOD_STORED
+                maker.putNextEntry(name)
+                src.getInputStream(entry).use { maker.writeFully(it) }
+                maker.closeEntry()
+                maker.method = ZipMaker.METHOD_DEFLATED
+            } else {
+                maker.copyZipEntry(entry, src)
+            }
+        }
     }
 }
 ```
 
-### 3. V2 & V3 APK Signing
+### 4. Embed the original APK with host and virtual entries
 
 ```kotlin
-import top.nkbe.nza.sign.V2V3SchemeSigner
+ZipFile(originalApk).use { src ->
+    ZipMaker(outputApk).use { maker ->
+        // Modified manifest, written normally
+        maker.putNextEntry("AndroidManifest.xml")
+        maker.write(newManifestBytes)
+        maker.closeEntry()
+
+        // The whole original APK as one STORED, 16KB-aligned entry
+        val host = maker.putNextHostEntry("assets/npatch/origin.apk", src)
+
+        // Make selected files of the original show up in the outer APK
+        // without copying their bytes a second time
+        for (entry in src.getEntries()) {
+            if (entry.name == "AndroidManifest.xml") continue
+            host.putNextVirtualEntry(entry.name)
+        }
+    }
+}
+```
+
+A virtual entry reuses the host's local file header and data, so the entry should keep the compression method it has in the original APK. `putNextVirtualEntry` throws `IOException` if the name is not in the source archive, so callers can catch it and fall back to `copyZipEntry` (NPatch does this).
+
+### 5. Sign with v2 and v3
+
+```kotlin
 import top.nkbe.nza.sign.GenericSignatureKey
+import top.nkbe.nza.sign.V2V3SchemeSigner
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 
 val keyStore = KeyStore.getInstance("BKS").apply {
-    keyStoreFile.inputStream().use { load(it, password) }
+    keystoreFile.inputStream().use { load(it, storePassword) }
 }
-val entry = keyStore.getEntry(alias, KeyStore.PasswordProtection(password)) as KeyStore.PrivateKeyEntry
-val sigKey = GenericSignatureKey(
+val entry = keyStore.getEntry(alias, KeyStore.PasswordProtection(keyPassword)) as KeyStore.PrivateKeyEntry
+val key = GenericSignatureKey(
     entry.privateKey,
     entry.certificateChain.map { it as X509Certificate }.toTypedArray()
 )
 
-// Sign APK with v2 and v3 schemes
-V2V3SchemeSigner.sign(
-    apkFile = outputFile,
-    signatureKey = sigKey,
-    enableV2 = true,
-    enableV3 = true
-)
+V2V3SchemeSigner.sign(file = outputApk, signatureKey = key, enableV2 = true, enableV3 = true)
 ```
+
+Notes:
+- The APK is modified in place, so sign it after `ZipMaker` has been closed.
+- Sign last. Any change to the ZIP contents afterwards invalidates v2/v3.
+- At least one of `enableV2` and `enableV3` must be true.
+
+### 6. Read APK signatures
+
+```kotlin
+import top.nkbe.nza.sign.ApkSignatureReader
+
+val certs: List<ByteArray> = ApkSignatureReader.getApkSignatures(apkFile) // DER certificates
+val hex: String? = ApkSignatureReader.getApkSignInfo(apkFile)             // first cert, hex; null if unsigned
+val chars: CharArray = ApkSignatureReader.toChars(certs[0])
+```
+
+Failures (unreadable file, corrupt signing block) return an empty list or `null` instead of throwing.
+
+### From Java
+
+Everything above is callable from Java. `V2V3SchemeSigner` and `ApkSignatureReader` are Kotlin objects with `@JvmStatic` members. Default arguments only exist on the Kotlin side, so pass all four arguments of `sign`:
+
+```java
+V2V3SchemeSigner.sign(outputFile, signatureKey, true, true);
+String sig = ApkSignatureReader.getApkSignInfo(new File(path));
+```
+
+---
+
+## Real-world usage: NPatch
+
+[NPatch](https://github.com/7723mod/NPatch) uses NeoApk end to end in its `patch` module (`NPatch.java`). It is a good reference for how the pieces fit together:
+
+| NPatch step | NeoApk API |
+|-------------|------------|
+| Parse the source APK's manifest | `ZipFile.getEntry`, `getInputStream` |
+| Write the patched manifest and injected loader dex/native libraries | `ZipMaker.putNextEntry`, `writeFully`, `closeEntry`, `method` |
+| Re-store `.so` / `resources.arsc` so they can be aligned | `ZipMaker.METHOD_STORED`, `ZipConstant.METHOD_STORED` |
+| Keep the original APK as `assets/npatch/origin.apk` | `putNextHostEntry` |
+| Link the original's other files without copying | `HostEntryHolder.putNextVirtualEntry`, falling back to `copyZipEntry` |
+| Copy split APK entries as they are | `copyZipEntry` |
+| Read the original signature for signature bypass | `ApkSignatureReader.getApkSignInfo` |
+| Sign with the built-in or a user keystore | `GenericSignatureKey`, `V2V3SchemeSigner.sign(file, key, true, true)` |
+
+---
+
+## Building and testing
+
+```
+./gradlew test build
+```
+
+The tests in `src/test` cover alignment, host/virtual entries, and v2/v3 signing. The signing tests are verified against Google's `apksig` (test dependency only).
 
 ---
 

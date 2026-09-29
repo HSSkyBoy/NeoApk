@@ -95,27 +95,11 @@ class ExtraDataRecord {
             }
             return null
         }
-
-        @JvmStatic
-        @Throws(IOException::class)
-        fun generateAESExtra(aesKeyStrength: Int, method: Int): ByteArray {
-            val versionNumber = 2
-            val vendorID = "AE"
-            val data = ByteArray(7)
-            ZipUtil.writeShort(data, 0, versionNumber)
-            ZipUtil.writeBytes(data, 2, vendorID.toByteArray(ZipConstant.UTF_8))
-            ZipUtil.writeByte(data, 4, aesKeyStrength)
-            ZipUtil.writeShort(data, 5, method)
-            return data
-        }
     }
 
     var header: Int = 0
     var sizeOfData: Int = 0
     var data: ByteArray = ByteArray(0)
-
-    @Throws(IOException::class)
-    fun readUByte(off: Int): Int = ZipUtil.readUByte(data, off)
 
     @Throws(IOException::class)
     fun readUShort(off: Int): Int = ZipUtil.readUShort(data, off)

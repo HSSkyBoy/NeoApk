@@ -87,8 +87,8 @@ class ZipFile(
             list.add(ze)
         }
 
-        list.sortWith(Comparator { e1, e2 -> e1.headerOffset.compareTo(e2.headerOffset) })
-        val ok = HashSet<String>(list.size)
+        list.sortBy { it.headerOffset }
+        entries.clear()
 
         for (entry in list) {
             try {
@@ -102,36 +102,17 @@ class ZipFile(
                 entry.extra = extra
                 entry.dataOffset = offset + ZipConstant.LFH_OFFSET_FOR_FILENAME_LENGTH +
                         ZipConstant.SHORT + ZipConstant.SHORT + fileNameLen + extraLen
-                ok.add(entry.name)
-            } catch (e: EOFException) {
-                // Log and ignore corrupt individual headers
-            }
-        }
-
-        entries.clear()
-        for (entry in list) {
-            val key = entry.name
-            if (ok.contains(key)) {
-                entries[key] = entry
+                entries[entry.name] = entry
+            } catch (_: EOFException) {
+                // Ignore corrupt individual headers
             }
         }
     }
 
     @Throws(IOException::class)
     private fun readEocdRecord(): EocdRecord? {
-        val length = archive.length()
-        var off = length - ZipConstant.MIN_EOCD_SIZE
-        val stopSearching = maxOf(0L, length - ZipConstant.MAX_EOCD_SIZE)
-        var found = false
-        while (off >= stopSearching) {
-            seek(off)
-            if (readInt() == ZipConstant.EOCD_SIG) {
-                found = true
-                break
-            }
-            off--
-        }
-        if (!found) return null
+        val off = EocdLocator.find(archive)
+        if (off < 0) return null
 
         return try {
             val zip64EocdRecordOffset = parseZip64EocdRecordLocator(off)
@@ -260,29 +241,13 @@ class ZipFile(
         return bytes
     }
 
-    @Throws(IOException::class)
-    private fun readInt(): Int {
-        val ch1 = archive.read()
-        val ch2 = archive.read()
-        val ch3 = archive.read()
-        val ch4 = archive.read()
-        if ((ch1 or ch2 or ch3 or ch4) < 0) throw EOFException()
-        return ch1 or (ch2 shl 8) or (ch3 shl 16) or (ch4 shl 24)
-    }
+    private fun readInt(): Int = archive.readInt()
 
-    @Throws(IOException::class)
-    private fun readUShort(): Int {
-        val ch1 = archive.read()
-        val ch2 = archive.read()
-        if ((ch1 or ch2) < 0) throw EOFException()
-        return ch1 or (ch2 shl 8)
-    }
+    private fun readUShort(): Int = archive.readUShort()
 
-    @Throws(IOException::class)
-    private fun readUInt(): Long = readInt().toLong() and 0xFFFFFFFFL
+    private fun readUInt(): Long = archive.readUInt()
 
-    @Throws(IOException::class)
-    private fun readLong(): Long = readUInt() or (readUInt() shl 32)
+    private fun readLong(): Long = archive.readLong()
 
     @Throws(IOException::class)
     override fun close() {

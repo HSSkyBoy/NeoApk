@@ -34,7 +34,7 @@ object ApkSignatureReader {
             if (v1Signatures.isNotEmpty()) {
                 return v1Signatures
             }
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
         }
         return emptyList()
     }
@@ -86,42 +86,33 @@ object ApkSignatureReader {
             val cdOffset = zipBuffer.centralDirectoryOffset
             accessFile.seek(cdOffset - 24)
             val blockSize = accessFile.readLong()
-            val blockStart = cdOffset - blockSize - 8
-
-            var currentPos = blockStart + 8
             val pairsEnd = cdOffset - 24
+            var currentPos = cdOffset - blockSize
 
             val v3Certs = mutableListOf<ByteArray>()
             val v2Certs = mutableListOf<ByteArray>()
 
-            while (currentPos < pairsEnd) {
+            while (currentPos + 12 <= pairsEnd) {
                 accessFile.seek(currentPos)
                 val pairLen = accessFile.readLong()
-                if (pairLen < 4 || currentPos + 8 + pairLen > pairsEnd + 8) {
-                    break
-                }
+                if (pairLen < 4 || pairLen > pairsEnd - currentPos - 8) break
+
                 val pairId = accessFile.readInt()
-                val dataLen = (pairLen - 4).toInt()
-                val dataBytes = ByteArray(dataLen)
-                accessFile.read(dataBytes)
-
-                val buffer = ByteBuffer.wrap(dataBytes).order(ByteOrder.LITTLE_ENDIAN)
-                when (pairId) {
-                    APK_SIGNATURE_SCHEME_V3_BLOCK_ID, APK_SIGNATURE_SCHEME_V31_BLOCK_ID -> {
-                        v3Certs.addAll(parseSigners(buffer))
-                    }
-                    APK_SIGNATURE_SCHEME_V2_BLOCK_ID -> {
-                        v2Certs.addAll(parseSigners(buffer))
-                    }
+                val target = when (pairId) {
+                    APK_SIGNATURE_SCHEME_V3_BLOCK_ID, APK_SIGNATURE_SCHEME_V31_BLOCK_ID -> v3Certs
+                    APK_SIGNATURE_SCHEME_V2_BLOCK_ID -> v2Certs
+                    else -> null
                 }
-
+                if (target != null) {
+                    val dataBytes = ByteArray((pairLen - 4).toInt())
+                    accessFile.readFully(dataBytes)
+                    target.addAll(parseSigners(ByteBuffer.wrap(dataBytes).order(ByteOrder.LITTLE_ENDIAN)))
+                }
                 currentPos += 8 + pairLen
             }
 
-            if (v3Certs.isNotEmpty()) return v3Certs
-            if (v2Certs.isNotEmpty()) return v2Certs
+            return v3Certs.ifEmpty { v2Certs }
         }
-        return emptyList()
     }
 
     private fun getLengthPrefixedSlice(buffer: ByteBuffer): ByteBuffer {
