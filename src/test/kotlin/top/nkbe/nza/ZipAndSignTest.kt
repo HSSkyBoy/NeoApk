@@ -148,6 +148,14 @@ class ZipAndSignTest {
         assertTrue("APK verification must succeed", result.isVerified)
         assertTrue("V2 scheme must be verified", result.isVerifiedUsingV2Scheme)
         assertTrue("V3 scheme must be verified", result.isVerifiedUsingV3Scheme)
+
+        // Verify extraction using our zero-dependency ApkSignatureReader
+        val extractedSigs = top.nkbe.nza.sign.ApkSignatureReader.getApkSignatures(apkFile)
+        assertEquals(1, extractedSigs.size)
+        assertTrue("Extracted cert bytes must match signer cert", cert.encoded.contentEquals(extractedSigs[0]))
+        val signInfo = top.nkbe.nza.sign.ApkSignatureReader.getApkSignInfo(apkFile)
+        assertNotNull(signInfo)
+        assertEquals(top.nkbe.nza.sign.ApkSignatureReader.toCharsString(cert.encoded), signInfo)
     }
 
     @Test
