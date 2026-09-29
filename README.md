@@ -81,7 +81,7 @@ top.nkbe.nza
 
 ## Installation
 
-The library coordinates are `top.nkbe:NeoApk:1.0.0`.
+The library coordinates are `top.nkbe:NeoApk:1.0.1`.
 
 ### Local Maven
 
@@ -91,7 +91,7 @@ The library coordinates are `top.nkbe:NeoApk:1.0.0`.
 
 ```kotlin
 repositories { mavenLocal() }
-dependencies { implementation("top.nkbe:NeoApk:1.0.0") }
+dependencies { implementation("top.nkbe:NeoApk:1.0.1") }
 ```
 
 ### Composite build (local development)
@@ -113,11 +113,11 @@ if (neoApkDir.exists()) {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("top.nkbe:NeoApk:1.0.0")
+    implementation("top.nkbe:NeoApk:1.0.1")
 }
 ```
 
-If the sibling directory does not exist, the substitution is skipped and `top.nkbe:NeoApk:1.0.0` has to resolve from a repository (for example `mavenLocal()`).
+If the sibling directory does not exist, the substitution is skipped and `top.nkbe:NeoApk:1.0.1` has to resolve from a repository (for example `mavenLocal()`).
 
 ---
 
