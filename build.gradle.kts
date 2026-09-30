@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "top.nkbe"
-version = "1.0.1"
+version = "1.0.2"
 
 repositories {
     mavenCentral()
@@ -27,6 +27,7 @@ dependencies {
     testImplementation("com.android.tools.build:apksig:8.0.2")
     testImplementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     testImplementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+    testImplementation("org.smali:dexlib2:2.5.2")
 }
 
 publishing {
