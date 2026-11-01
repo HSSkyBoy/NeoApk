@@ -1,8 +1,8 @@
 # NeoApk
 
-[![Build and Test](https://github.com/HSSkyBoy/NeoApk/actions/workflows/build.yml/badge.svg)](https://github.com/HSSkyBoy/NeoApk/actions/workflows/build.yml)
+[![Build and Test](https://github.com/Nk-Be/NeoApk/actions/workflows/build.yml/badge.svg)](https://github.com/Nk-Be/NeoApk/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/HSSkyBoy/NeoApk?color=brightgreen)](https://github.com/HSSkyBoy/NeoApk/releases)
+[![Release](https://img.shields.io/github/v/release/Nk-Be/NeoApk?color=brightgreen)](https://github.com/Nk-Be/NeoApk/releases)
 
 **NeoApk** (package `top.nkbe.nza`) is a pure Kotlin/JVM library for building, aligning, and signing Android APKs. It bundles three things that APK repackaging tools usually get from separate places:
 
